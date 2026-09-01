@@ -1,24 +1,26 @@
 # AGRI-KD: A Lightweight Multi-Task Framework for Rice Disease Diagnosis
 
 [![Paper](https://img.shields.io/badge/Paper-Smart%20Ag%20Tech-green)](https://doi.org/PENDING)
-[![Dataset](https://img.shields.io/badge/Dataset-Mendeley%20Data-blue)](https://doi.org/10.17632/86s4jzj2m4.1)
+[![Dataset](https://img.shields.io/badge/Dataset-Mendeley%20Data-blue)](https://doi.org/10.17632/86s4jzj2m4.2)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 Official implementation of **"AGRI-KD: A Lightweight Multi-Task Framework for Rice Disease Diagnosis with Localization and Severity Quantification"**, submitted to *Smart Agricultural Technology* (Elsevier).
 
 ## Overview
 
-AGRI-KD is a multi-task knowledge distillation framework that compresses an ensemble of three teacher CNNs into a single lightweight MobileNetV3-Small student (1.73M parameters, 6.8 MB) capable of producing **five simultaneous outputs** from a single forward pass:
+AGRI-KD compresses an ensemble of three teacher CNNs into a single lightweight MobileNetV3-Small student (1.73M parameters, 6.97 MB) producing **five simultaneous outputs** from one forward pass:
 
 | Output | Metric | Value |
 |--------|--------|-------|
-| Disease Classification | Accuracy | 91.9% |
-| Spatial Localization | Dice Coefficient | 0.574 |
-| Infected Area % (IAP) | MAE | 1.75% |
-| Severity Grading (5 levels) | Accuracy | 90.0% |
-| Lesion Counting | R² | 0.851 |
+| Disease Classification | Accuracy | 88.97% |
+| Spatial Localization | Dice Coefficient | 0.563 |
+| Infected Area % (leaf-area IAP) | MAE / R² | 8.28% / 0.705 |
+| Severity Grading (5 levels) | Accuracy / F1-macro | 67.2% / 0.606 |
+| Lesion Counting | MAE / R² | 0.81 / 0.574 |
 
-The model runs at **18.9 ms** on a budget smartphone (MediaTek Helio 55), enabling real-time in-field diagnosis for smallholder farmers.
+The model runs at **14.8 ms** on a budget smartphone (Helio 55, MediaTek Helio G92 SoC), enabling real-time in-field diagnosis for smallholder farmers.
+
+Infected area percentage is normalised by **leaf area**, not image area, so the measure does not vary with shooting distance and the severity thresholds correspond to published agronomic scales.
 
 <p align="center">
   <img src="figures/fig_architecture.png" width="90%" alt="AGRI-KD Architecture">
@@ -28,23 +30,42 @@ The model runs at **18.9 ms** on a budget smartphone (MediaTek Helio 55), enabli
 
 ### Ablation Study
 
-| Config | KD | Att | Agri | Acc (%) | Dice | IAP MAE | Sev Acc |
-|--------|----|-----|------|---------|------|---------|---------|
-| A1: Baseline | | | | 92.29 | 0.258 | 50.80% | 18.6% |
-| A2: +Agri | | | ✓ | 91.20 | 0.243 | 1.77% | 90.0% |
-| A3: +Attention | | ✓ | | 92.22 | 0.545 | 50.85% | 13.3% |
-| A4: +KD | ✓ | | | 92.50 | 0.384 | 53.34% | 4.9% |
-| A5: +KD+Att | ✓ | ✓ | | 92.70 | 0.554 | 53.27% | 5.1% |
-| **A6: Full AGRI-KD** | ✓ | ✓ | ✓ | **91.88** | **0.574** | **1.75%** | **90.0%** |
+| Config | KD | Att | Agri | Acc (%) | Dice | Pointing (%) | IAP MAE | Sev Acc |
+|--------|----|-----|------|---------|------|--------------|---------|---------|
+| A1: Baseline | | | | 88.70 | 0.299 | 20.1 | — | — |
+| A2: +Agri | | | ✓ | 89.18 | 0.289 | 16.0 | **7.86%** | **68.2%** |
+| A3: +Attention | | ✓ | | **89.73** | **0.568** | **78.4** | — | — |
+| A4: +KD | ✓ | | | 88.56 | 0.346 | 40.4 | — | — |
+| A5: +KD+Att | ✓ | ✓ | | 88.56 | 0.565 | 77.3 | — | — |
+| **A6: Full AGRI-KD** | ✓ | ✓ | ✓ | 88.97 | 0.563 | 78.3 | 8.28% | 67.2% |
+
+Attention supervision drives localisation (A3 vs A1: Dice 0.299 → 0.568, Cohen's *d* = 1.59). Agricultural heads drive quantification. Configurations without the corresponding head produce no output for that column.
+
+### Attention Localization
+
+| Method | IoU | Dice | Pointing (%) |
+|--------|-----|------|--------------|
+| Baseline Attention | 0.187 | 0.295 | 18.3 |
+| Score-CAM | 0.142 | 0.202 | 30.7 |
+| Grad-CAM | 0.307 | 0.429 | 66.0 |
+| Grad-CAM++ | 0.386 | 0.524 | 77.3 |
+| Layer-CAM | 0.385 | 0.522 | 77.3 |
+| **AGRI-KD (learned)** | **0.419** | **0.564** | **78.7** |
+
+Evaluated on 300 diseased test samples at the native 7×7 resolution. AGRI-KD requires no gradient computation at inference, unlike every post-hoc method above.
 
 ### Deployment Benchmarks
 
-| Platform | Latency | FPS | RAM |
-|----------|---------|-----|-----|
-| NVIDIA L4 (GPU) | 6.4 ms | 157 | — |
-| Intel Xeon (CPU) | 12.1 ms | 82 | — |
-| Helio 55 Smartphone (1-thread) | 18.9 ms | 53 | 20.5 MB |
-| Helio 55 Smartphone (4-thread) | 10.8 ms | 92 | 20.3 MB |
+Helio 55 (MediaTek Helio G92, Android 15), TensorFlow Lite FP32, `benchmark_model`, 20 warm-up + 200 measured runs, three cold-start repetitions.
+
+| Configuration | Median | Range | CV | FPS | Memory |
+|---------------|--------|-------|-----|-----|--------|
+| XNNPACK, 1 thread | **14.80 ms** | 14.73–14.85 | 1.0% | 68 | 20.8 MB |
+| XNNPACK, 2 threads | 8.90 ms | 8.87–8.96 | 20.8% | 112 | 20.9 MB |
+| XNNPACK, 4 threads | 7.97 ms | 7.67–8.67 | 15.5% | 125 | 20.3 MB |
+| No delegate, 1 thread | 20.88 ms | — | 1.0% | 48 | 14.0 MB |
+
+The XNNPACK delegate provides a **1.41× speedup** at a cost of ~6.8 MB memory. Multi-threaded configurations are faster on average but substantially less stable, reflecting the heterogeneous big.LITTLE core layout; we report single-thread as the primary figure.
 
 ### Attention Visualization
 
@@ -55,201 +76,150 @@ The model runs at **18.9 ms** on a budget smartphone (MediaTek Helio 55), enabli
 ## Repository Structure
 
 ```
-AGRI-KD/
+agri-kd/
 ├── README.md
 ├── LICENSE
 ├── requirements.txt
+├── setup.py
 │
-├── notebooks/
-│   └── AGRIKD_Q1_Complete.ipynb      # Full training + evaluation pipeline
+├── agrikd/                          # importable package
+│   ├── models/                      # student, teachers, ensemble, leaf segmenter
+│   ├── losses/                      # attention, KD, contrastive, composite objective
+│   ├── data/                        # dataset, split handling, target construction
+│   ├── engine/                      # training loops, per-sample evaluation
+│   ├── utils/                       # seeding, checkpointing, metrics
+│   └── config.py                    # configuration and the six ablation settings
 │
-├── models/
-│   ├── weights/
-│   │   ├── A1_Baseline.pth           # Baseline MobileNetV3-Small
-│   │   ├── A2_Agricultural.pth       # +Agricultural heads
-│   │   ├── A3_Attention.pth          # +Attention supervision
-│   │   ├── A4_KD.pth                 # +Knowledge distillation
-│   │   ├── A5_KD_Attention.pth       # +KD+Attention
-│   │   └── A6_Full_AGRIKD.pth        # Full AGRI-KD (recommended)
-│   └── export/
-│       ├── agrikd.tflite             # TFLite for Android deployment
-│       └── agrikd_mobile.onnx        # ONNX for cross-platform inference
+├── scripts/
+│   ├── 00_train_leafseg.py          # leaf segmenter for the IAP denominator
+│   ├── 01_build_targets.py          # leaf masks → leaf-area IAP targets
+│   ├── 02_train.py                  # teachers + six ablation configurations
+│   ├── 03_evaluate.py               # per-sample test predictions and metrics
+│   └── 04_export_tflite.py          # TFLite export with numerical verification
 │
-├── results/
-│   ├── ablation_results.csv          # Main ablation study (Table 3)
-│   ├── deployment_benchmarks.csv     # Efficiency metrics (Table 6)
-│   ├── smartphone_benchmark.txt      # Helio 55 TFLite benchmark output
-│   ├── sota_comparison/
-│   │   └── sota_comparison.csv       # KD method comparison (Table 4)
-│   ├── attention_comparison/
-│   │   └── attention_comparison.csv  # Attention method comparison (Table 5)
-│   ├── significance_analysis/
-│   │   ├── cv_results.csv            # 5-fold cross-validation
-│   │   ├── multi_seed_results.csv    # Multi-seed stability
-│   │   ├── per_class_mcnemar.csv     # Per-class McNemar's test
-│   │   └── hp_tuning_results.csv     # Hyperparameter sensitivity
-│   └── yolo_detection/
-│       └── results.csv               # YOLOv8-Nano comparison
+├── configs/
+│   └── default.yaml                 # settings reported in the paper
 │
-├── figures/
-│   ├── fig_architecture.png          # Framework diagram
-│   ├── fig_attention_viz.png         # Attention visualization
-│   ├── fig_attention_bars.png        # Attention quantitative comparison
-│   ├── fig_severity_cm.png           # Severity confusion matrix
-│   └── fig_dataset_samples.png       # Dataset examples
+├── annotations/                     # 405 hand-annotated leaf polygons (CC BY 4.0)
+│   ├── manifest.csv
+│   ├── images/
+│   └── masks/
 │
-└── benchmark/
-    ├── benchmark_phone.py            # Termux/ONNX phone benchmark script
-    └── benchmark_tflite.sh           # TFLite benchmark tool commands
+├── figures/                         # publication figures
+│
+└── docs/
+    ├── DATASET.md                   # data preparation and layout
+    └── REPRODUCIBILITY.md           # expected run-to-run variation
 ```
 
 ## Quick Start
 
-### Requirements
+### Install
 
 ```bash
-pip install torch torchvision timm albumentations scikit-learn matplotlib seaborn
+git clone https://github.com/<org>/agri-kd.git
+cd agri-kd
+pip install -e .
 ```
 
-### Inference (Single Image)
+Python ≥ 3.9, PyTorch ≥ 2.0. Training needs a CUDA GPU; inference runs on CPU.
+
+### Inference
 
 ```python
-import torch
-import timm
-import cv2
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
+import cv2, torch
+from agrikd import StudentModel
+from agrikd.data import eval_transform
 
-# Load model
-class StudentModel(torch.nn.Module):
-    def __init__(self, num_classes=6, num_severity_grades=5):
-        super().__init__()
-        self.backbone = timm.create_model('mobilenetv3_small_100', pretrained=False)
-        self.feature_dim = self.backbone.classifier.in_features
-        self.backbone.classifier = torch.nn.Identity()
-        self.classifier = torch.nn.Sequential(
-            torch.nn.Dropout(0.3), torch.nn.Linear(self.feature_dim, num_classes))
-        self.iap_head = torch.nn.Sequential(
-            torch.nn.Dropout(0.2), torch.nn.Linear(self.feature_dim, 64),
-            torch.nn.ReLU(), torch.nn.Linear(64, 1), torch.nn.Sigmoid())
-        self.severity_head = torch.nn.Sequential(
-            torch.nn.Dropout(0.2), torch.nn.Linear(self.feature_dim, 32),
-            torch.nn.ReLU(), torch.nn.Linear(32, num_severity_grades))
-        self.count_head = torch.nn.Sequential(
-            torch.nn.Dropout(0.2), torch.nn.Linear(self.feature_dim, 32),
-            torch.nn.ReLU(), torch.nn.Linear(32, 1), torch.nn.ReLU())
-        self.spatial_features = None
-        self.backbone.blocks.register_forward_hook(
-            lambda m, inp, out: setattr(self, 'spatial_features', out))
-        self.attention_conv = torch.nn.Sequential(
-            torch.nn.Conv2d(576, 128, 1, bias=False), torch.nn.BatchNorm2d(128), torch.nn.ReLU(True),
-            torch.nn.Conv2d(128, 32, 1, bias=False), torch.nn.BatchNorm2d(32), torch.nn.ReLU(True),
-            torch.nn.Conv2d(32, 1, 1), torch.nn.Sigmoid())
-
-    def forward(self, x):
-        features = self.backbone(x)
-        attention = self.attention_conv(self.spatial_features).squeeze(1)
-        return {
-            'cls': self.classifier(features),
-            'iap': self.iap_head(features).squeeze(-1) * 100,
-            'severity': self.severity_head(features),
-            'count': self.count_head(features).squeeze(-1),
-            'attention': attention
-        }
-
-# Load weights
-model = StudentModel()
-model.load_state_dict(torch.load('models/weights/A6_Full_AGRIKD.pth', map_location='cpu'))
-model.eval()
-
-# Prepare image
 CLASS_NAMES = ['Healthy', 'Blast', 'Brown spot', 'Leaf smut', 'Rice Tungro', 'Sheath blight']
-SEVERITY_NAMES = ['Minimal (<5%)', 'Mild (5-15%)', 'Moderate (15-30%)', 'Severe (30-50%)', 'Critical (>50%)']
+SEVERITY = ['Minimal (<5%)', 'Mild (5-15%)', 'Moderate (15-30%)',
+            'Severe (30-50%)', 'Critical (>50%)']
 
-transform = A.Compose([
-    A.Resize(224, 224),
-    A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ToTensorV2()
-])
+model = StudentModel(pretrained=False)
+model.load_state_dict(torch.load('models/weights/A6_Full_AGRIKD.pth', map_location='cpu'))
 
-img = cv2.imread('your_image.jpg')
-img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-tensor = transform(image=img)['image'].unsqueeze(0)
+image = cv2.cvtColor(cv2.imread('your_image.jpg'), cv2.COLOR_BGR2RGB)
+tensor = eval_transform()(image=image)['image'].unsqueeze(0)
 
-# Inference
-with torch.no_grad():
-    out = model(tensor)
-
-disease = CLASS_NAMES[out['cls'].argmax(1).item()]
-iap = out['iap'].item()
-severity = SEVERITY_NAMES[out['severity'].argmax(1).item()]
-count = out['count'].item()
-
-print(f"Disease:  {disease}")
-print(f"IAP:      {iap:.1f}%")
-print(f"Severity: {severity}")
-print(f"Lesions:  {count:.0f}")
+out = model.predict(tensor)
+print(f"Disease:  {CLASS_NAMES[out['class_id'].item()]}")
+print(f"IAP:      {out['iap_percent'].item():.1f}% of leaf area")
+print(f"Severity: {SEVERITY[out['severity_grade'].item()]}")
+print(f"Lesions:  {out['lesion_count'].item():.1f}")
 ```
 
-### Training (Full Pipeline)
-
-Open `notebooks/AGRIKD_Q1_Complete.ipynb` in Google Colab and follow the cells sequentially. The notebook handles:
-1. Dataset loading and preprocessing
-2. Teacher fine-tuning (ResNet-50, DenseNet-121, EfficientNet-B0)
-3. Knowledge extraction (soft labels, attention maps)
-4. Student training with composite loss
-5. Ablation study (A1–A6 configurations)
-6. Evaluation and statistical analysis
-
-### Smartphone Deployment
+### Full pipeline
 
 ```bash
-# Export to TFLite (in Colab)
-# See notebook Section: "Model Export"
+python scripts/00_train_leafseg.py --config configs/default.yaml
+python scripts/01_build_targets.py --config configs/default.yaml
+python scripts/02_train.py         --config configs/default.yaml
+python scripts/03_evaluate.py      --config configs/default.yaml
+python scripts/04_export_tflite.py --weights outputs/checkpoints/A6_Full_AGRIKD_best.pth
+```
 
-# Benchmark on Android via Termux
+Training and evaluation checkpoint every epoch and resume automatically after an interruption. Train a single configuration with `--only A3_AttentionOnly`.
+
+### Smartphone deployment
+
+```bash
+# on Android via Termux
 pkg install wget
 wget https://storage.googleapis.com/tensorflow-nightly-public/prod/tensorflow/release/lite/tools/nightly/latest/android_aarch64_benchmark_model -O benchmark_model
 chmod +x benchmark_model
-./benchmark_model --graph=models/export/agrikd.tflite --num_threads=1 --num_runs=200
+
+./benchmark_model --graph=agrikd_5out.tflite --num_threads=1 \
+  --num_runs=200 --warmup_runs=20 --use_xnnpack=true \
+  --report_peak_memory_footprint=true
 ```
+
+## Reproducing our numbers
+
+**Your results will differ slightly from the paper.** Two independent runs of this code, same seed and same hardware, differed by up to 1.7 percentage points on severity accuracy and 0.5 on classification accuracy.
+
+Treat **±1 pp on accuracy metrics** and **±0.01 on Dice and IoU** as successful reproduction. `docs/REPRODUCIBILITY.md` gives the measured variation, its sources, and which findings reproduce robustly.
+
+To match our partition exactly, use the `split.csv` released with the paper rather than regenerating it — directory listing order is filesystem dependent, so a random seed alone does not reproduce split membership.
 
 ## Dataset
 
-The **RiceLeafDiseaseBD** dataset is publicly available:
+**RiceLeafDiseaseBD** is distributed separately and is not included here.
 
-- **Source**: [Mendeley Data (DOI: 10.17632/86s4jzj2m4.1)](https://doi.org/10.17632/86s4jzj2m4.1)
-- **Size**: 9,769 images, 74,836 bounding box annotations
+- **Source**: [Mendeley Data](https://doi.org/10.17632/86s4jzj2m4.2)
+- **Size**: 9,769 images, 21,460 bounding box annotations
 - **Classes**: Blast, Brown Spot, Healthy, Leaf Smut, Rice Tungro, Sheath Blight
 - **Format**: YOLO annotation format
 - **Collection**: Field-collected in Gazipur, Bangladesh
 
-## Citation
+Use the current dataset version; see `docs/DATASET.md` for the expected layout.
 
-If you use this code or dataset, please cite:
+Leaf-area IAP additionally requires a leaf mask per image, which the dataset does not provide. This repository ships 405 hand-annotated leaf polygons in `annotations/`, drawn on training-split images only, from which `scripts/00_train_leafseg.py` trains the segmenter used to generate the remaining masks.
+
+## Citation
 
 ```bibtex
 @article{munna2026agrikd,
-  title={AGRI-KD: A Lightweight Multi-Task Framework for Rice Disease Diagnosis 
+  title={AGRI-KD: A Lightweight Multi-Task Framework for Rice Disease Diagnosis
          with Localization and Severity Quantification},
-  author={Munna, Mohammad Mehedi Hasan and Tulona, Reefka Fabliha and Kabir, Acramul Haque},
+  author={Munna, Mohammad Mehedi Hasan and Tulona, Reefka Fabliha and
+          Kabir, Acramul Haque},
   journal={Smart Agricultural Technology},
   year={2026},
   publisher={Elsevier}
 }
 
-@misc{kabir2024riceleafdiseasebd,
+@misc{kabir2026riceleafdiseasebd,
   title={RiceLeafDiseaseBD Dataset},
   author={Kabir, Acramul Haque},
-  year={2024},
-  howpublished={\url{https://doi.org/10.17632/86s4jzj2m4.1}},
+  year={2026},
+  howpublished={\url{https://doi.org/10.17632/86s4jzj2m4.2}},
   note={Mendeley Data}
 }
 ```
 
 ## License
 
-This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
+Code is licensed under the MIT License — see [LICENSE](LICENSE). The leaf polygon annotations in `annotations/` are released under CC BY 4.0.
 
 ## Acknowledgments
 
